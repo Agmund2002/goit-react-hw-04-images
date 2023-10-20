@@ -1,4 +1,4 @@
-import { Component } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Searchbar } from './Searchbar/Searchbar';
 import { ImageGallery } from './ImageGallery/ImageGallery';
 import { Button } from './Button/Button';
@@ -7,86 +7,82 @@ import { servicePhoto } from 'api/services';
 import { Notify } from 'notiflix';
 import { ErrorMessage } from './ErrorMessage/ErrorMessage';
 
-export class App extends Component {
-  state = {
-    images: [],
+export const App = () => {
+  const [images, setImages] = useState([]);
+  const [searchParams, setSearchParams] = useState({
     inputValue: '',
     page: 1,
-    loadMoreBtn: false,
-    loader: false,
-    error: false
-  };
+  });
+  const [loadMoreBtn, setLoadMoreBtn] = useState(false);
+  const [loader, setLoader] = useState(false);
+  const [error, setError] = useState(false);
 
-  componentDidUpdate(_, prevState) {
-    if (
-      prevState.inputValue !== this.state.inputValue ||
-      prevState.page !== this.state.page
-    ) {
-      this.addImages();
+  const controllerRef = useRef();
+
+  useEffect(() => {
+    if (searchParams.inputValue === '') {
+      return;
     }
-  }
 
-  async addImages() {
-    try {
-      const { inputValue, page } = this.state;
-      this.setState({
-        loader: true,
-      });
-
-      const { hits, totalHits } = await servicePhoto(inputValue, page);
-
-      if (hits.length === 0) {
-        Notify.failure('Nothing could be found for this query');
+    async function addImages() {
+      if (controllerRef.current) {
+        controllerRef.current.abort();
       }
 
-      this.setState({
-        images: [...this.state.images, ...hits],
-        loadMoreBtn: this.state.page < Math.ceil(totalHits / 12),
-      });
-    } catch (_) {
-      this.setState({
-        error: true,
-      });
-    } finally {
-      this.setState({
-        loader: false,
-      });
-    }
-  }
+      controllerRef.current = new AbortController();
 
-  getInputValue = value => {
-    if (this.state.inputValue !== value) {
-      this.setState({
-        images: [],
-        inputValue: value,
-        page: 1,
-      });
-    } else {
-      Notify.warning(
-        'The result of this query is already displayed in front of you'
-      );
-    }
-  };
+      try {
+        const { inputValue, page } = searchParams;
+        setLoader(true);
+        setLoadMoreBtn(false);
 
-  loadMore = () => {
-    this.setState(prevState => {
-      return {
-        page: prevState.page + 1,
-      };
+        const { hits, totalHits } = await servicePhoto(
+          inputValue,
+          page,
+          controllerRef.current.signal
+        );
+
+        if (hits.length === 0) {
+          Notify.failure('Nothing could be found for this query');
+        }
+
+        setImages([...images, ...hits]);
+        setLoadMoreBtn(page < Math.ceil(totalHits / 12));
+      } catch (error) {
+        if (error.code === "ERR_CANCELED") {
+          return;
+        }
+        
+        setError(true);
+      } finally {
+        setLoader(false);
+      }
+    }
+    addImages();
+  }, [searchParams]);
+
+  const getInputValue = value => {
+    setImages([]);
+    setSearchParams({
+      inputValue: value,
+      page: 1,
     });
   };
 
-  render() {
-    const { images, loadMoreBtn, error, loader } = this.state;
+  const loadMore = () => {
+    setSearchParams({
+      ...searchParams,
+      page: searchParams.page + 1,
+    });
+  };
 
-    return (
-      <div>
-        <Searchbar handlerSubmit={this.getInputValue} />
-        {images.length > 0 && <ImageGallery data={this.state.images} />}
-        {loader && <Loader visible={this.state.loader} />}
-        {loadMoreBtn && <Button handlerClick={this.loadMore} />}
-        {error && <ErrorMessage />}
-      </div>
-    );
-  }
-}
+  return (
+    <div>
+      <Searchbar handlerSubmit={getInputValue} />
+      {images.length > 0 && <ImageGallery data={images} />}
+      {loader && <Loader visible={loader} />}
+      {loadMoreBtn && <Button handlerClick={loadMore} />}
+      {error && <ErrorMessage />}
+    </div>
+  );
+};
