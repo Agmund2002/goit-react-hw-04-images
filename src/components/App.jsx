@@ -46,7 +46,7 @@ export const App = () => {
           Notify.failure('Nothing could be found for this query');
         }
 
-        setImages([...images, ...hits]);
+        setImages(images => [...images, ...hits]);
         setLoadMoreBtn(page < Math.ceil(totalHits / 12));
       } catch (error) {
         if (error.code === "ERR_CANCELED") {
